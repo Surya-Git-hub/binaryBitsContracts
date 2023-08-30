@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 contract BinaryBits {
     address immutable ADMIN;
     uint articleCount;
+    uint commentCount;
 
     constructor(address Admin) {
         ADMIN = Admin;
@@ -22,7 +23,8 @@ contract BinaryBits {
         uint256 id;
         bytes commentURI;
         address author;
-        address replyTo;
+        uint256 replyTo;
+        uint articleId;
     }
 
     struct Article {
@@ -36,9 +38,19 @@ contract BinaryBits {
 
     event ArticlePublished(Article article);
     event ArticleUpdated(Article newArticle);
+    event ArticleLiked(uint articleId, address likedBy);
+    event ArticleDisLiked(uint articleId, address dislikedBy);
+    event CommentAdded(
+        uint256 id,
+        bytes commentURI,
+        address author,
+        uint256 replyTo,
+        uint articleId
+    );
 
     mapping(uint => Article) idToArticle;
     mapping(address => uint[]) userToArticleIds;
+    mapping(uint => Comment) idToComment;
     mapping(uint256 => uint256[]) articleIdToCommentIds;
     mapping(uint256 => uint256[]) commentIdToReplyIds; //reply is also a comment
 
@@ -122,19 +134,82 @@ contract BinaryBits {
         return articles;
     }
 
+    function hasUserLikedArticle(
+        uint _articleId,
+        address _user
+    ) internal view returns (bool, uint) {
+        for (uint i = 0; i < idToArticle[_articleId].likes.length; i++) {
+            if (idToArticle[_articleId].likes[i] == _user) {
+                return (true, i);
+            }
+        }
+        return (false, 0);
+    }
+
     function likeArticle(uint256 articleId) public {
         require(idToArticle[articleId].id > 0, "id is invalid");
+        (bool value, ) = hasUserLikedArticle(articleId, msg.sender);
+        require(!value, "you have already liked this article"); //check if already liked
         idToArticle[articleId].likes.push(msg.sender);
+        emit ArticleLiked(articleId, msg.sender);
+    }
+
+    function hasUserDisLikedArticle(
+        uint _articleId,
+        address _user
+    ) internal view returns (bool, uint) {
+        for (uint i = 0; i < idToArticle[_articleId].dislikes.length; i++) {
+            if (idToArticle[_articleId].dislikes[i] == _user) {
+                return (true, i);
+            }
+        }
+        return (false, 0);
     }
 
     function dislikeArticle(uint256 articleId) public {
         require(idToArticle[articleId].id > 0, "id is invalid");
+        (bool value, ) = hasUserDisLikedArticle(articleId, msg.sender);
+        require(!value, "you have already liked this article"); //check if already disliked
         idToArticle[articleId].dislikes.push(msg.sender);
+        emit ArticleDisLiked(articleId, msg.sender);
     }
 
-    function commentOnArticle(uint256 articleId, bytes memory comment) public {}
+    function commentOnArticle(uint256 articleId, bytes memory comment) public {
+        require(comment.length > 0, "comment should not be empty");
+        require(idToArticle[articleId].id > 0, "id is invalid");
+        commentCount = commentCount + 1;
+        idToComment[commentCount] = Comment(
+            commentCount,
+            comment,
+            msg.sender,
+            0,
+            articleId
+        );
+        idToArticle[articleId].commentIds.push(commentCount);
+        emit CommentAdded(commentCount, comment, msg.sender, 0, articleId);
+    }
 
-    function replyToComment(uint256 commentId, bytes memory reply) public {}
+    function replyToComment(uint256 commentId, bytes memory reply) public {
+        require(reply.length > 0, "reply should not be empty");
+        require(idToComment[commentId].articleId > 0, "id is invalid");
+        commentCount = commentCount + 1;
 
-    function reportArticle(uint256 articleId) public {}
+        idToComment[commentCount] = Comment(
+            commentCount,
+            reply,
+            msg.sender,
+            commentId,
+            idToComment[commentId].articleId
+        );
+        idToArticle[idToComment[commentId].articleId].commentIds.push(
+            commentCount
+        );
+        emit CommentAdded(
+            commentCount,
+            reply,
+            msg.sender,
+            0,
+            idToComment[commentId].articleId
+        );
+    }
 }
